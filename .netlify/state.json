@@ -1,0 +1,21 @@
+{
+	"dbConnectionString": "postgres://localhost:53809/postgres",
+	"geolocation": {
+		"data": {
+			"city": "Nanchang",
+			"country": {
+				"code": "CN",
+				"name": "China"
+			},
+			"subdivision": {
+				"code": "JX",
+				"name": "Jiangxi"
+			},
+			"timezone": "Asia/Shanghai",
+			"latitude": 28.6796,
+			"longitude": 115.8655
+		},
+		"timestamp": 1780923128359
+	},
+	"siteId": "b2754868-b9a5-472d-85ce-022294e7f940"
+}

@@ -1,0 +1,13 @@
+# 忽略 Node.js 的依赖包和构建产物
+node_modules/
+functions-serve/
+db/
+dist/
+build/      
+public/     
+.env
+# 忽略常见的压缩打包文件
+*.zip
+*.tar.gz
+*.rar
+*.log
