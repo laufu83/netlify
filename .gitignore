@@ -11,3 +11,6 @@ public/
 *.tar.gz
 *.rar
 *.log
+
+# Local Netlify folder
+.netlify

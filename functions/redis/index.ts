@@ -1,14 +1,7 @@
-import Redis from "ioredis";
-
-// ==============================
-// 配置
-// ==============================
+import { Redis } from '@upstash/redis';
 const MAX_RETRY = 2;
 const redisEnabled = true;
 
-// ==============================
-// 内存 KV（降级备用）
-// ==============================
 const memoryStore = new Map<string, { value: any; expires: number }>();
 setInterval(() => {
   const now = Date.now();
@@ -60,9 +53,6 @@ const memoryKV = {
   },
 };
 
-// ==============================
-// Redis 客户端
-// ==============================
 let redisClient: Redis | null = null;
 let redisFailed = false;
 
@@ -70,45 +60,14 @@ function getRedisClient(): Redis | null {
   if (!redisEnabled) return null;
   if (redisFailed) return null;
 
-  if (redisClient && redisClient.status !== "end") {
-    return redisClient;
-  }
+  if (redisClient) return redisClient;
 
   try {
     redisClient = new Redis({
-      host: process.env.REDIS_HOST || "localhost",
-      port: parseInt(process.env.REDIS_PORT || "6379"),
-      password: process.env.REDIS_PASSWORD || undefined,
-      db: parseInt(process.env.REDIS_DB || "0"),
-
-      lazyConnect: true,
-      maxRetriesPerRequest: MAX_RETRY,
-      enableOfflineQueue: false,
-      connectTimeout: 1500,
-
-      retryStrategy(times) {
-        if (times > MAX_RETRY) {
-          redisFailed = true;
-          console.warn("[KV] Redis 重试超限，标记为不可用");
-          return null;
-        }
-        return Math.min(times * 80, 1000);
-      },
+      url: process.env.UPSTASH_REDIS_URL!,
+      token: process.env.UPSTASH_REDIS_TOKEN!,
     });
-
-    redisClient.on("error", (err) => {
-      redisFailed = true;
-      console.warn("[KV] Redis 异常:", err.message);
-    });
-
-    redisClient.on("close", () => {
-      redisFailed = true;
-    });
-
-    redisClient.on("connect", () => {
-      console.log("[KV] Redis 连接成功");
-    });
-
+    console.log("[KV] Upstash Redis 连接成功");
     return redisClient;
   } catch (err: any) {
     redisFailed = true;
@@ -117,9 +76,6 @@ function getRedisClient(): Redis | null {
   }
 }
 
-// ==============================
-// 自动容错 KV + 完整日志
-// ==============================
 export const kv = {
   async get<T>(key: string): Promise<T | null> {
     const client = getRedisClient();
@@ -129,10 +85,9 @@ export const kv = {
     }
 
     try {
-      const data = await client.get(key);
-      const result = data ? JSON.parse(data) : null;
+      const result = await client.get<T>(key);
       console.log(`[KV] Redis GET ${key} | ${result ? '命中' : '不存在'}`);
-      return result;
+      return result ?? null;
     } catch (err: any) {
       redisFailed = true;
       console.warn(`[KV] Redis GET 失败，降级内存 | key: ${key} | err: ${err.message}`);
@@ -148,7 +103,7 @@ export const kv = {
     }
 
     try {
-      await client.set(key, JSON.stringify(value), "EX", exSeconds);
+      await client.set(key, value, { ex: exSeconds });
       console.log(`[KV] Redis SET ${key} | 过期: ${exSeconds}s`);
     } catch (err: any) {
       redisFailed = true;
