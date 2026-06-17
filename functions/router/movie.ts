@@ -14,6 +14,11 @@ router.get("/api/vod/list", async (req: Request, res: Response) => {
     const size = Math.min(50, Math.max(1, parseInt(req.query.size as string) || 20));
     const offset = (page - 1) * size;
     const type = req.query.type as string;
+    const year = req.query.year as string;
+    const area = req.query.area as string;
+    const lang = req.query.lang as string;
+    const clazz = req.query.class as string;
+    const letter = req.query.letter as string;
     const table = getSafeTable((req.query.table as string) || "vod_dytt");
 
     let where = "WHERE 1=1";
@@ -22,6 +27,26 @@ router.get("/api/vod/list", async (req: Request, res: Response) => {
     if (type) {
       where += " AND type_id = ?";
       params.push(type);
+    }
+    if (year) {
+      where += " AND vod_year = ?";
+      params.push(year);
+    }
+    if (area) {
+      where += " AND vod_area = ?";
+      params.push(area);
+    }
+    if (lang) {
+      where += " AND vod_lang = ?";
+      params.push(lang);
+    }
+    if (clazz) {
+      where += " AND vod_class like ?";
+      params.push(`%${clazz}%`);
+    }
+    if (letter) {
+      where += " AND vod_letter = ?";
+      params.push(letter);
     }
 
     const [rows] = await pool.query(
