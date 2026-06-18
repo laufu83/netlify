@@ -1,5 +1,9 @@
 [build]
   functions = "functions"
+# 前端打包输出目录，必须配置
+  publish = "dist"
+# 云端构建执行打包命令
+  command = "npm run build"
 
 [[redirects]]
   from = "/api/*"

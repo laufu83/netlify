@@ -2,9 +2,44 @@ import { Router, Request, Response } from "express";
 import { pool } from "../db";
 import { getSafeTable, strCut } from "../utils";
 import { successResponse, errorResponse } from "../middleware";
-
+import { pinyin } from "pinyin-pro";
 const router = Router();
+// 拼音配置
+const MAX_LENGTH = 50;
+/**
+ * 根据片名生成大写拼音首字母，仅保留A-Z，无缓存
+ */
+function getFirstLetter(str: string): string {
+  const trimStr = str?.trim();
+  if (!trimStr) return '';
 
+  try {
+    // type:string 固定返回字符串，无需判断数组
+    const lettersRaw = pinyin(trimStr, {
+      pattern: 'first',
+      type: 'string',
+      toneType: 'none'
+    }).toUpperCase();
+
+    // 仅保留大写A-Z
+    let letters = lettersRaw.replace(/[^A-Z]/g, '');
+
+    // 拼音解析为空（英文/数字/符号），取第一个字符大写兜底
+    if (!letters) {
+      const firstChar = trimStr[0].toUpperCase();
+      letters = /[A-Z0-9]/.test(firstChar) ? firstChar : '';
+    }
+
+    // 长度截断
+    if (letters.length > MAX_LENGTH) {
+      letters = letters.substring(0, MAX_LENGTH);
+    }
+
+    return letters;
+  } catch {
+    return '';
+  }
+}
 // ==========================
 // 视频列表 ✅ 完整修复
 // ==========================
@@ -140,6 +175,9 @@ router.get("/api/vod/search", async (req: Request, res: Response) => {
 // ==========================
 // 采集同步 ✅ 修复：安全、异常、格式
 // ==========================
+// ==========================
+// 采集同步：自动根据vod_name生成拼音首字母存入vod_name_letter
+// ==========================
 router.get("/api/vod/sync", async (req: Request, res: Response) => {
   try {
     const token = req.query.token as string;
@@ -166,39 +204,43 @@ router.get("/api/vod/sync", async (req: Request, res: Response) => {
       return res.json(successResponse({ msg: "暂无数据可同步", count: 0 }));
     }
 
-    const batch = list.map((item: any) => [
-      item.vod_id,
-      item.type_id,
-      strCut(item.type_name, 50),
-      item.type_id_1,
-      strCut(item.vod_name, 255),
-      strCut(item.vod_sub, 255),
-      strCut(item.vod_en, 255),
-      strCut(item.vod_letter, 10),
-      strCut(item.vod_class, 100),
-      item.vod_pic,
-      strCut(item.vod_actor, 500),
-      strCut(item.vod_director, 200),
-      strCut(item.vod_area, 50),
-      strCut(item.vod_lang, 50),
-      item.vod_year,
-      item.vod_douban_id,
-      item.vod_douban_score,
-      strCut(item.vod_content, 2000),
-      strCut(item.vod_remarks, 255),
-      item.vod_score,
-      item.vod_play_url,
-      item.vod_status,
-      item.vod_time,
-    ]);
+    const batch = list.map((item: any) => {
+      const vodNameLetter = getFirstLetter(item.vod_name);
+      return [
+        item.vod_id,
+        item.type_id,
+        strCut(item.type_name, 50),
+        item.type_id_1,
+        strCut(item.vod_name, 255),
+        strCut(item.vod_sub, 255),
+        strCut(item.vod_en, 255),
+        strCut(item.vod_letter ?? '', 10),
+        vodNameLetter,
+        strCut(item.vod_class, 100),
+        item.vod_pic,
+        strCut(item.vod_actor, 500),
+        strCut(item.vod_director, 200),
+        strCut(item.vod_area, 50),
+        strCut(item.vod_lang, 50),
+        item.vod_year,
+        item.vod_douban_id,
+        item.vod_douban_score,
+        strCut(item.vod_content, 2000),
+        strCut(item.vod_remarks, 255),
+        item.vod_score,
+        item.vod_play_url,
+        item.vod_status,
+        item.vod_time,
+      ];
+    });
 
-    const ph = Array(batch.length).fill("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",");
+    const ph = Array(batch.length).fill("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",");
 
     await pool.query(
       `
       INSERT INTO ${table} (
         vod_id,type_id,type_name,type_id_1,vod_name,vod_sub,vod_en,vod_letter,
-        vod_class,vod_pic,vod_actor,vod_director,vod_area,vod_lang,vod_year,
+        vod_name_letter,vod_class,vod_pic,vod_actor,vod_director,vod_area,vod_lang,vod_year,
         vod_douban_id,vod_douban_score,vod_content,vod_remarks,vod_score,
         vod_play_url,vod_status,vod_time
       ) VALUES ${ph}
@@ -208,14 +250,15 @@ router.get("/api/vod/sync", async (req: Request, res: Response) => {
         vod_name=VALUES(vod_name),
         vod_pic=VALUES(vod_pic),
         vod_play_url=VALUES(vod_play_url),
-        vod_time=VALUES(vod_time)
+        vod_time=VALUES(vod_time),
+        vod_name_letter=VALUES(vod_name_letter)
     `,
       batch.flat()
     );
 
     res.json(successResponse({
-      msg: "同步完成",
-      count: list.length,
+      msg: "同步完成，已自动生成片名拼音首字母",
+      count: list.length
     }));
 
   } catch (e) {
