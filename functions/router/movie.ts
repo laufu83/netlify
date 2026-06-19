@@ -284,7 +284,7 @@ router.get("/api/vod/sync", async (req: Request, res: Response) => {
  * 批量补全 vod_name_letter 拼音首字母
  * 每批200条，单次接口最多处理2000条，批量SQL更新
  */
-router.get("/api/vod/test", async (req: Request, res: Response) => {
+router.get("/api/vod/refresh", async (req: Request, res: Response) => {
   try {
     const token = req.query.token as string;
     const table = getSafeTable((req.query.table as string) || "vod_dytt");
