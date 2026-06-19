@@ -218,45 +218,42 @@ router.get("/api/vod/sync", async (req: Request, res: Response) => {
       return res.json(successResponse({ msg: "暂无数据可同步", count: 0 }));
     }
 
-    const batch = list.map((item: any) => {
-      const vodNameLetter = getFirstLetter(item.vod_name);
-      return [
-        item.vod_id,
-        item.type_id,
-        strCut(item.type_name, 50),
-        item.type_id_1,
-        strCut(item.vod_name, 255),
-        strCut(item.vod_sub, 255),
-        strCut(item.vod_en, 255),
-        strCut(item.vod_letter ?? '', 10),
-        vodNameLetter,
-        strCut(item.vod_class, 100),
-        item.vod_pic,
-        strCut(item.vod_actor, 500),
-        strCut(item.vod_director, 200),
-        strCut(item.vod_area, 50),
-        strCut(item.vod_lang, 50),
-        item.vod_year,
-        item.vod_douban_id,
-        item.vod_douban_score,
-        strCut(item.vod_content, 2000),
-        strCut(item.vod_remarks, 255),
-        item.vod_score,
-        item.vod_play_url,
-        item.vod_status,
-        item.vod_time,
-      ];
-    });
+    const batch = list.map((item: any) => [      
+      item.vod_id,
+      item.type_id,
+      strCut(item.type_name, 50),
+      item.type_id_1,
+      strCut(item.vod_name, 255),
+      strCut(item.vod_sub, 255),
+      strCut(item.vod_en, 255),
+      strCut(item.vod_letter, 10),
+      strCut(item.vod_class, 100),
+      item.vod_pic,
+      strCut(item.vod_actor, 500),
+      strCut(item.vod_director, 200),
+      strCut(item.vod_area, 50),
+      strCut(item.vod_lang, 50),
+      item.vod_year,
+      item.vod_douban_id,
+      item.vod_douban_score,
+      strCut(item.vod_content, 2000),
+      strCut(item.vod_remarks, 255),
+      item.vod_score,
+      item.vod_play_url,
+      item.vod_status,
+      item.vod_time,
+      getFirstLetter(item.vod_name)
+    ]);
 
-    const ph = Array(batch.length).fill("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",");
+    const ph = Array(batch.length).fill("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",");
 
     await pool.query(
       `
       INSERT INTO ${table} (
         vod_id,type_id,type_name,type_id_1,vod_name,vod_sub,vod_en,vod_letter,
-        vod_name_letter,vod_class,vod_pic,vod_actor,vod_director,vod_area,vod_lang,vod_year,
+        vod_class,vod_pic,vod_actor,vod_director,vod_area,vod_lang,vod_year,
         vod_douban_id,vod_douban_score,vod_content,vod_remarks,vod_score,
-        vod_play_url,vod_status,vod_time
+        vod_play_url,vod_status,vod_time,vod_name_letter
       ) VALUES ${ph}
       ON DUPLICATE KEY UPDATE 
         type_id=VALUES(type_id),
@@ -271,8 +268,8 @@ router.get("/api/vod/sync", async (req: Request, res: Response) => {
     );
 
     res.json(successResponse({
-      msg: "同步完成，已自动生成片名拼音首字母",
-      count: list.length
+      msg: "同步完成",
+      count: list.length,
     }));
 
   } catch (e) {
