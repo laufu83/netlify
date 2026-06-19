@@ -279,5 +279,86 @@ router.get("/api/vod/sync", async (req: Request, res: Response) => {
     res.status(500).json(errorResponse("sync_error", 500, (e as Error).message));
   }
 });
+/**
+ * 批量补全 vod_name_letter 拼音首字母
+ * 单次最多处理 2000 条，每批 200 条
+ */
+/**
+ * 批量补全 vod_name_letter 拼音首字母
+ * 每批200条，单次接口最多处理2000条，批量SQL更新
+ */
+router.get("/api/vod/test", async (req: Request, res: Response) => {
+  try {
+    const token = req.query.token as string;
+    const table = getSafeTable((req.query.table as string) || "vod_dytt");
+
+    // 权限校验
+    if (!process.env.SYNC_TOKEN || token !== process.env.SYNC_TOKEN) {
+       console.log(`[批量补全] 权限校验失败，非法token请求`);
+      return res.status(403).json(errorResponse("forbidden", 403, "无操作权限"));
+    }
+    const BATCH_SIZE = 200;
+    const MAX_HANDLE_TOTAL = 2000;
+    let totalUpdateCount = 0;
+    let offset = 0;
+     let batchNo = 1;
+    console.log(`\n===== 开始批量补全表【${table}】vod_name_letter =====`);
+    console.log(`配置：每批${BATCH_SIZE}条，本次最大处理上限${MAX_HANDLE_TOTAL}条`);
+    while (totalUpdateCount < MAX_HANDLE_TOTAL) {
+      const startTime = Date.now();
+      console.log(`\n【第${batchNo}批】偏移量 offset = ${offset}`);
+      // 拉取当前批次需要补全首字母的数据
+      const [rows] = await pool.query(
+        `SELECT vod_id, vod_name FROM ${table} WHERE (vod_name_letter IS NULL) LIMIT ? OFFSET ?`,
+        [BATCH_SIZE, offset]
+      );
+      const list = rows as Array<{ vod_id: number; vod_name: string }>;
+
+      const fetchCount = list.length;
+
+      if (fetchCount === 0) {
+        console.log(`第${batchNo}批未查询到待更新数据，任务提前结束`);
+        break;
+      }
+
+      // 批量生成首字母
+      const updateData: Array<{ id: number; letter: string }> = list.map(item => {
+        return {
+          id: item.vod_id,
+          letter: getFirstLetter(item.vod_name)
+        };
+      });
+
+      // 构造批量CASE WHEN更新SQL
+      const caseStr = updateData.map(item => `WHEN ${item.id} THEN ?`).join(" ");
+      const idArr = updateData.map(item => item.id).join(",");
+      const params = updateData.map(item => item.letter);
+
+      const updateSql = `
+        UPDATE ${table}
+        SET vod_name_letter = CASE vod_id ${caseStr} END
+        WHERE vod_id IN (${idArr})
+      `;
+      await pool.query(updateSql, params);
+      const costMs = Date.now() - startTime;
+      totalUpdateCount += list.length;
+      batchNo++;
+      offset += BATCH_SIZE;
+      console.log(`✅ 第${batchNo}批执行成功，更新${fetchCount}条，耗时：${costMs}ms`);
+      // 每批轻微休眠，缓解数据库压力
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    return res.json(successResponse({
+      batchSize: BATCH_SIZE,
+      maxOnceLimit: MAX_HANDLE_TOTAL,
+      actualUpdated: totalUpdateCount,
+      msg: totalUpdateCount > 0 ? `成功更新${totalUpdateCount}条视频拼音首字母` : "暂无需要补全的数据"
+    }));
+
+  } catch (err) {
+    return res.status(500).json(errorResponse("batch_update_error", 500, (err as Error).message));
+  }
+});
 
 export default router;
