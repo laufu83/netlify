@@ -21,10 +21,9 @@ function getFirstLetter(str: string): string {
       toneType: 'none'
     }).toUpperCase();
 
-    // 仅保留大写A-Z
-    let letters = lettersRaw.replace(/[^A-Z]/g, '');
+  // 正则修改：保留大写字母 A-Z + 数字 0-9
+    let letters = lettersRaw.replace(/[^A-Z0-9]/g, '');
 
-    // 拼音解析为空（英文/数字/符号），取第一个字符大写兜底
     if (!letters) {
       const firstChar = trimStr[0].toUpperCase();
       letters = /[A-Z0-9]/.test(firstChar) ? firstChar : '';
@@ -140,33 +139,48 @@ router.get("/api/vod/search", async (req: Request, res: Response) => {
     const size = Math.min(50, Math.max(1, parseInt(req.query.size as string) || 20));
     const offset = (page - 1) * size;
     const table = getSafeTable((req.query.table as string) || "vod_dytt");
-
-    const kw = `%${keyword}%`;
-    const sql = `
-      SELECT * FROM ${table} 
-      WHERE vod_name LIKE ? 
-         OR vod_sub LIKE ? 
-         OR vod_actor LIKE ? 
-         OR vod_director LIKE ? 
-      ORDER BY vod_time DESC 
-      LIMIT ? OFFSET ?
-    `;
-
-    const [rows] = await pool.query(sql, [kw, kw, kw, kw, size, offset]);
-
-    // const [totalRow] = await pool.query(
-    //   `SELECT COUNT(*) AS count FROM ${table} 
-    //    WHERE vod_name LIKE ? 
-    //       OR vod_sub LIKE ? 
-    //       OR vod_actor LIKE ? 
-    //       OR vod_director LIKE ?`,
-    //   [kw, kw, kw, kw]
-    // );
-
-    //const total = (totalRow as any[])[0]?.count || 0;
-
-    res.json(successResponse(rows));
-
+    // 正则：仅大小写字母、数字
+    const ENGLISH_NUM_REG = /^[A-Za-z0-9]+$/;
+    // 场景1：纯英文/数字 → 拼音首字母前缀查询（走索引）
+    if (ENGLISH_NUM_REG.test(keyword)) {
+      const letterKw = `${keyword.toUpperCase()}%`;
+      const sql = `
+        SELECT vod_id,type_name,vod_name,vod_sub,vod_class,vod_pic,vod_actor,vod_director,
+               vod_time,vod_area,vod_lang,vod_year,vod_douban_score,vod_remarks,
+               vod_score,vod_content,vod_play_url
+        FROM ${table}
+        WHERE vod_name_letter LIKE ?
+        ORDER BY vod_time DESC
+        LIMIT ? OFFSET ?
+      `;
+      const [rows] = await pool.query(sql, [letterKw, size, offset]);
+        res.json(successResponse(rows));
+    }else{
+      const kw = `%${keyword}%`; 
+      const sql = `
+        SELECT t1.vod_id,t1.type_name,t1.vod_name,t1.vod_sub,t1.vod_class,t1.vod_pic,
+               t1.vod_actor,t1.vod_director,t1.vod_time,t1.vod_area,t1.vod_lang,t1.vod_year,
+               t1.vod_douban_score,t1.vod_remarks,t1.vod_score,t1.vod_content,t1.vod_play_url
+        FROM ${table} t1
+        INNER JOIN (
+            SELECT DISTINCT vod_id, vod_time
+            FROM (          
+                SELECT vod_id, vod_time FROM ${table} WHERE vod_name LIKE ?
+                UNION ALL
+                SELECT vod_id, vod_time FROM ${table} WHERE vod_sub LIKE ?
+                UNION ALL
+                SELECT vod_id, vod_time FROM ${table} WHERE vod_actor LIKE ?
+                UNION ALL
+                SELECT vod_id, vod_time FROM ${table} WHERE vod_director LIKE ?
+            ) AS union_result
+            ORDER BY vod_time DESC
+            LIMIT ? OFFSET ?
+        ) t2 ON t1.vod_id = t2.vod_id
+        ORDER BY t1.vod_time DESC;
+      `;
+      const [rows] = await pool.query(sql, [kw, kw, kw, kw, size, offset]);
+      res.json(successResponse(rows));
+    }
   } catch (e) {
     res.status(500).json(errorResponse("server_error", 500, (e as Error).message));
   }
